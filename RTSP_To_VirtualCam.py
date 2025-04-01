@@ -1,31 +1,37 @@
 # Enjoy Martins Dabolins
 
+import logging
+import queue
 import sys
+import threading
+import time
+from collections import deque
+
+import av
 import cv2
 import numpy as np
-import av
-import time
-import queue
-import threading
-from collections import deque
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QLabel, QPushButton,
-    QVBoxLayout, QHBoxLayout, QMessageBox, QComboBox
-)
+import pyvirtualcam
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
-import logging
-import pyvirtualcam
-
+from PyQt5.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 # Configure logging to output to both console and file for better traceability
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("virtual_cam_app.log"),
-        logging.StreamHandler(sys.stdout)
-    ]
+        logging.StreamHandler(sys.stdout),
+    ],
 )
 
 
@@ -35,7 +41,10 @@ class VirtualCamSendThread(QThread):
     It can either send frames from a queue (RTSP frames) or generate and send test pattern frames.
     Emits a signal after sending each frame for GUI preview.
     """
-    virtual_cam_frame_sent_signal = pyqtSignal(np.ndarray)  # Signal with frame data after sending to virtual cam
+
+    virtual_cam_frame_sent_signal = pyqtSignal(
+        np.ndarray
+    )  # Signal with frame data after sending to virtual cam
 
     def __init__(self):
         super().__init__()
@@ -43,8 +52,10 @@ class VirtualCamSendThread(QThread):
         self.running = True
         self.frame_rate_n = None
         self.frame_rate_d = None
-        self.send_test_pattern = True  # Start with test pattern until stream is connected
-        self.test_pattern_resolution = (1920, 1080)  # Width, Height
+        self.send_test_pattern = (
+            True  # Start with test pattern until stream is connected
+        )
+        self.test_pattern_resolution = (2560, 1440)  # Width, Height
         self.virtual_cam = None
 
     def run(self):
@@ -100,6 +111,17 @@ class VirtualCamSendThread(QThread):
             self.virtual_cam.sleep_until_next_frame()
 
             logging.debug("Frame sent to virtual camera.")
+        except ValueError as e:
+            if "unexpected frame size" in str(e):
+                logging.error(
+                    f"unexpected frame size: {frame.shape}. Check the resolution of the virtual camera."
+                )
+            elif "unexpected frame shape" in str(e):
+                logging.error(
+                    f"unexpected frame shape: {frame.shape}. Ensure the frame is in RGB format."
+                )
+            else:
+                logging.error(f"ValueError while sending frame to virtual camera: {e}")
         except Exception as e:
             logging.error(f"Exception while sending frame to virtual camera: {e}")
 
@@ -110,7 +132,9 @@ class VirtualCamSendThread(QThread):
         """
         if self.send_test_pattern:
             # Do not accept RTSP frames when sending test pattern
-            logging.debug("VirtualCamSendThread is in test pattern mode. RTSP frame ignored.")
+            logging.debug(
+                "VirtualCamSendThread is in test pattern mode. RTSP frame ignored."
+            )
             return
 
         try:
@@ -124,11 +148,15 @@ class VirtualCamSendThread(QThread):
                 pass
             try:
                 self.queue.put_nowait(frame)
-                logging.debug("New frame enqueued to VirtualCamSendThread after discarding old frame.")
+                logging.debug(
+                    "New frame enqueued to VirtualCamSendThread after discarding old frame."
+                )
             except queue.Full:
-                logging.warning("VirtualCamSendThread queue is still full after discarding. Frame not enqueued.")
+                logging.warning(
+                    "VirtualCamSendThread queue is still full after discarding. Frame not enqueued."
+                )
 
-    def set_frame_rate(self, frame_rate_n, frame_rate_d):
+    def set_frame_rate(self, frame_rate_n, frame_rate_d, width=None, height=None):
         """
         Initialize the virtual camera with the frame rate.
         """
@@ -137,16 +165,28 @@ class VirtualCamSendThread(QThread):
         fps = self.frame_rate_n / self.frame_rate_d
         if not self.virtual_cam:
             try:
-                width = self.test_pattern_resolution[0]
-                height = self.test_pattern_resolution[1]
-                self.virtual_cam = pyvirtualcam.Camera(width=width, height=height, fps=fps)
-                logging.info(f'Virtual camera started ({self.virtual_cam.device}) with fps: {fps}.')
+                if width is None or height is None:
+                    # Use default resolution if not provided
+                    width = self.test_pattern_resolution[0]
+                    height = self.test_pattern_resolution[1]
+                else:
+                    # Use provided resolution
+                    width = width
+                    height = height
+                self.virtual_cam = pyvirtualcam.Camera(
+                    width=width, height=height, fps=fps
+                )
+                logging.info(
+                    f"Virtual camera started ({self.virtual_cam.device}) with fps: {fps}."
+                )
             except Exception as e:
                 logging.error(f"Failed to open virtual camera: {e}")
                 self.running = False
         else:
             logging.warning("Virtual camera already initialized. Cannot change fps.")
-        logging.info(f"VirtualCamSendThread frame rate set to {self.frame_rate_n}/{self.frame_rate_d}.")
+        logging.info(
+            f"VirtualCamSendThread frame rate set to {self.frame_rate_n}/{self.frame_rate_d}."
+        )
 
     def enable_test_pattern(self):
         """
@@ -172,21 +212,23 @@ class VirtualCamSendThread(QThread):
             bar_height = height // 8
             colors = [
                 (255, 255, 255),  # White
-                (255, 255, 0),    # Yellow
-                (0, 255, 255),    # Cyan
-                (0, 255, 0),      # Green
-                (255, 0, 255),    # Magenta
-                (255, 0, 0),      # Red
-                (0, 0, 255),      # Blue
-                (0, 0, 0)         # Black
+                (255, 255, 0),  # Yellow
+                (0, 255, 255),  # Cyan
+                (0, 255, 0),  # Green
+                (255, 0, 255),  # Magenta
+                (255, 0, 0),  # Red
+                (0, 0, 255),  # Blue
+                (0, 0, 0),  # Black
             ]
             frame = np.zeros((height, width, 3), dtype=np.uint8)
             for i, color in enumerate(colors):
-                frame[i * bar_height:(i + 1) * bar_height, :] = color
+                frame[i * bar_height : (i + 1) * bar_height, :] = color
             return frame
         except Exception as e:
             logging.error(f"Exception while creating test pattern: {e}")
-            return np.zeros((height, width, 3), dtype=np.uint8)  # Return a black frame on error
+            return np.zeros(
+                (height, width, 3), dtype=np.uint8
+            )  # Return a black frame on error
 
     def stop(self):
         """
@@ -203,11 +245,16 @@ class VideoThread(QThread):
     Emits frames for GUI display and sends them to VirtualCamSendThread.
     Implements automatic reconnection with exponential backoff.
     """
+
     frame_ready_signal = pyqtSignal(np.ndarray)  # Signal with RTSP frame data
-    virtual_cam_frame_ready_signal = pyqtSignal(np.ndarray)  # Signal with virtual cam frame data for GUI
+    virtual_cam_frame_ready_signal = pyqtSignal(
+        np.ndarray
+    )  # Signal with virtual cam frame data for GUI
     connection_lost_signal = pyqtSignal()
     connection_established_signal = pyqtSignal()
-    reconnection_attempt_signal = pyqtSignal(int)  # Signal to indicate reconnection attempts
+    reconnection_attempt_signal = pyqtSignal(
+        int
+    )  # Signal to indicate reconnection attempts
 
     def __init__(self, rtsp_url, virtual_cam_send_thread):
         super().__init__()
@@ -218,11 +265,11 @@ class VideoThread(QThread):
         self.container = None
         self.lock = threading.Lock()
         self.should_reconnect = True  # Flag to control reconnection attempts
-        self.is_reconnecting = False   # Prevent multiple reconnection loops
+        self.is_reconnecting = False  # Prevent multiple reconnection loops
 
         # Exponential backoff parameters
         self.initial_wait = 1  # Initial wait time in seconds
-        self.max_wait = 32     # Maximum wait time in seconds
+        self.max_wait = 32  # Maximum wait time in seconds
         self.current_wait = self.initial_wait
 
     def run(self):
@@ -241,8 +288,12 @@ class VideoThread(QThread):
                 # Reset reconnection parameters upon successful connection
                 self.current_wait = self.initial_wait
 
+                video_stream = self.container.streams.video[0]
+                logging.info(
+                    "Stream resolution: " f"{video_stream.width}x{video_stream.height}."
+                )
                 # Process frames
-                for packet in self.container.demux():
+                for packet in self.container.demux(video_stream):
                     with self.lock:
                         if not self.running:
                             logging.info("VideoThread stopping.")
@@ -256,7 +307,11 @@ class VideoThread(QThread):
                                 break
                         if frame is None:
                             continue
-                        img = frame.to_ndarray(format='bgr24')
+                        logging.info(f"Frame resolution: {frame.width}x{frame.height}.")
+                        # img = frame.to_ndarray(format="bgr24")
+                        img = np.array(
+                            frame.to_image()
+                        )  # Convert to PIL image, then to NumPy array
 
                         # Emit signal to indicate a new RTSP frame is ready for GUI
                         self.frame_ready_signal.emit(img)
@@ -267,7 +322,7 @@ class VideoThread(QThread):
                         # Emit signal for virtual cam preview in GUI
                         self.virtual_cam_frame_ready_signal.emit(img)
 
-            except av.AVError as e:
+            except av.FFmpegError as e:
                 logging.error(f"Stream error: {e}")
                 self.handle_disconnection()
             except Exception as e:
@@ -288,31 +343,47 @@ class VideoThread(QThread):
             try:
                 # Set low-latency options for FFmpeg
                 options = {
-                    'rtsp_transport': 'tcp',       # Use TCP for RTSP transport
-                    'stimeout': '5000000',         # Socket timeout in microseconds
-                    'fflags': 'nobuffer',          # Disable buffering
-                    'flags': 'low_delay',          # Enable low delay
-                    'max_delay': '0',              # No maximum delay
-                    'probesize': '32',             # Reduce probing size
-                    'analyzeduration': '0'         # Reduce analysis duration
+                    "rtsp_transport": "tcp",  # Use TCP for RTSP transport
+                    "stimeout": "5000000",  # Socket timeout in microseconds
+                    "fflags": "nobuffer",  # Disable buffering
+                    "flags": "low_delay",  # Enable low delay
+                    "max_delay": "0",  # No maximum delay
+                    "probesize": "32",  # Reduce probing size
+                    "analyzeduration": "0",  # Reduce analysis duration
                 }
                 self.container = av.open(self.rtsp_url, options=options)
                 logging.info("Successfully connected to the RTSP stream.")
 
                 # Retrieve and set the actual frame rate from the stream
                 stream = self.container.streams.video[0]
+                frame_width = stream.width
+                frame_height = stream.height
+                if frame_width == 0 or frame_height == 0:
+                    logging.info(
+                        "Stream width or height is 0. Using default resolution."
+                    )
+                    width = None
+                    height = None
+                else:
+                    logging.info(f"Stream resolution: {width}x{height}.")
                 if stream.average_rate:
                     frame_rate_n = stream.average_rate.numerator
                     frame_rate_d = stream.average_rate.denominator
-                    logging.info(f"Stream frame rate set to {frame_rate_n}/{frame_rate_d} fps.")
+                    logging.info(
+                        f"Stream frame rate set to {frame_rate_n}/{frame_rate_d} fps."
+                    )
                 else:
                     # Fallback to default if average_rate is not available
                     frame_rate_n = 25
                     frame_rate_d = 1
-                    logging.info(f"Stream frame rate not available. Using default {frame_rate_n}/{frame_rate_d} fps.")
+                    logging.info(
+                        f"Stream frame rate not available. Using default {frame_rate_n}/{frame_rate_d} fps."
+                    )
 
                 # Update the VirtualCamSendThread with the actual frame rate
-                self.virtual_cam_send_thread.set_frame_rate(frame_rate_n, frame_rate_d)
+                self.virtual_cam_send_thread.set_frame_rate(
+                    frame_rate_n, frame_rate_d, width, height
+                )
 
                 self.connection_established = True
                 self.connection_established_signal.emit()
@@ -323,7 +394,7 @@ class VideoThread(QThread):
                 # Reset reconnection flags
                 self.is_reconnecting = False
 
-            except av.AVError as e:
+            except av.FFmpegError as e:
                 logging.error(f"Failed to open stream: {e}")
                 self.connection_established = False
                 self.container = None
@@ -340,7 +411,9 @@ class VideoThread(QThread):
                 self.connection_established = False
 
             if self.is_reconnecting:
-                logging.debug("Already in reconnection mode. Skipping new reconnection attempts.")
+                logging.debug(
+                    "Already in reconnection mode. Skipping new reconnection attempts."
+                )
                 return
 
             self.is_reconnecting = True
@@ -384,7 +457,9 @@ class MainWindow(QWidget):
 
         # Initialize VirtualCamSendThread
         self.virtual_cam_send_thread = VirtualCamSendThread()
-        self.virtual_cam_send_thread.virtual_cam_frame_sent_signal.connect(self.update_virtual_cam_preview)  # Connect frames to GUI
+        self.virtual_cam_send_thread.virtual_cam_frame_sent_signal.connect(
+            self.update_virtual_cam_preview
+        )  # Connect frames to GUI
         self.virtual_cam_send_thread.start()
 
         # GUI Elements
@@ -433,6 +508,27 @@ class MainWindow(QWidget):
         # Store last 10 RTSP URLs
         self.rtsp_history = deque(maxlen=10)
 
+        self.load_rtsp_history()
+
+    def load_rtsp_history(self):
+        try:
+            with open("rtsp_history.txt", "r", encoding="utf8") as f:
+                for line in f:
+                    self.rtsp_history.appendleft(line.strip())
+            self.rtsp_input.clear()
+            self.rtsp_input.addItems(self.rtsp_history)
+            self.rtsp_input.setCurrentIndex(0)
+        except FileNotFoundError:
+            logging.info("RTSP history file not found. Starting with empty history.")
+
+    def save_rtsp_history(self):
+        try:
+            with open("rtsp_history.txt", "w", encoding="utf8") as f:
+                for url in self.rtsp_history:
+                    f.write(url + "\n")
+        except Exception as e:
+            logging.error(f"Error saving RTSP history: {e}")
+
     def toggle_stream(self):
         if self.is_streaming:
             # Disconnect
@@ -447,7 +543,9 @@ class MainWindow(QWidget):
             rtsp_url = self.rtsp_input.currentText()
             logging.info(f"RTSP URL: {rtsp_url}")
             if not rtsp_url:
-                QMessageBox.warning(self, "Input Error", "Please enter a valid RTSP URL.")
+                QMessageBox.warning(
+                    self, "Input Error", "Please enter a valid RTSP URL."
+                )
                 return
 
             # Stop any existing threads
@@ -457,18 +555,21 @@ class MainWindow(QWidget):
                 logging.info("Existing VideoThread stopped.")
 
             # Create VideoThread and pass the VirtualCamSendThread
-            self.video_thread = VideoThread(
-                rtsp_url,
-                self.virtual_cam_send_thread
-            )
+            self.video_thread = VideoThread(rtsp_url, self.virtual_cam_send_thread)
             logging.info("VideoThread created.")
 
             # Connect signals
             self.video_thread.frame_ready_signal.connect(self.update_rtsp_preview)
-            self.video_thread.virtual_cam_frame_ready_signal.connect(self.update_virtual_cam_preview)
+            self.video_thread.virtual_cam_frame_ready_signal.connect(
+                self.update_virtual_cam_preview
+            )
             self.video_thread.connection_lost_signal.connect(self.on_connection_lost)
-            self.video_thread.connection_established_signal.connect(self.on_connection_established)
-            self.video_thread.reconnection_attempt_signal.connect(self.on_reconnection_attempt)
+            self.video_thread.connection_established_signal.connect(
+                self.on_connection_established
+            )
+            self.video_thread.reconnection_attempt_signal.connect(
+                self.on_reconnection_attempt
+            )
             logging.info("VideoThread signals connected.")
 
             # Start VideoThread
@@ -485,6 +586,7 @@ class MainWindow(QWidget):
                 self.rtsp_input.clear()
                 self.rtsp_input.addItems(self.rtsp_history)
                 self.rtsp_input.setCurrentIndex(0)
+                self.save_rtsp_history()
             logging.info("RTSP URL added to history.")
         except Exception as e:
             logging.error(f"Exception in connect_to_stream: {e}")
