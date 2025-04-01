@@ -307,7 +307,7 @@ class VideoThread(QThread):
                                 break
                         if frame is None:
                             continue
-                        logging.info(f"Frame resolution: {frame.width}x{frame.height}.")
+                        # logging.info(f"Frame resolution: {frame.width}x{frame.height}.")
                         # img = frame.to_ndarray(format="bgr24")
                         img = np.array(
                             frame.to_image()
@@ -365,7 +365,10 @@ class VideoThread(QThread):
                     width = None
                     height = None
                 else:
-                    logging.info(f"Stream resolution: {width}x{height}.")
+                    width = frame_width
+                    height = frame_height
+                # else:
+                #     logging.info(f"Stream resolution: {width}x{height}.")
                 if stream.average_rate:
                     frame_rate_n = stream.average_rate.numerator
                     frame_rate_d = stream.average_rate.denominator
